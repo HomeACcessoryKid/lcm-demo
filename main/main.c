@@ -112,12 +112,14 @@ void app_main(void) {
 // 
 //     printf("\n");
 // 
-//     // Restart module
-//     for (int i = 30; i >= 0; i--) {
-//         printf("Restarting in %d seconds...\n", i);
-//         vTaskDelay(1000 / portTICK_PERIOD_MS);
-//     }
-//     printf("Restarting now.\n");
-//     fflush(stdout);
-//     esp_restart();
+    esp_ota_set_boot_partition(esp_partition_find_first(ESP_PARTITION_TYPE_ANY,ESP_PARTITION_SUBTYPE_ANY,"ota_1"));
+
+    // Restart module
+    for (int i = 30; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    printf("Restarting now.\n");
+    fflush(stdout);
+    esp_restart();
 }
