@@ -35,6 +35,8 @@ void app_main(void) {
     ESP_ERROR_CHECK( err );
 
     //experimental block that gets you WIFI with the lowest amount of effort, otherwise based on FLASH
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
