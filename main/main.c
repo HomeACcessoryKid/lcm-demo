@@ -17,6 +17,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_ota_ops.h"
+#include "esp_wifi.h"
 
 
 // You must set VERSION=x.y.z of the lcm-demo code to match github version tag x.y.z via e.g. version.txt file
@@ -33,10 +34,18 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK( err );
 
-    nvs_stats_t nvs_stats;
-    nvs_get_stats(NULL, &nvs_stats);
-    printf("Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n",
-           nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);
+    //experimental block that gets you WIFI with the lowest amount of effort, otherwise based on FLASH
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
+    esp_netif_config.route_prio = 128;
+    esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
+    esp_wifi_set_default_wifi_sta_handlers();
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_FLASH));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+
     uint8_t number;
     char    string[64];
     size_t  size=64;
@@ -65,54 +74,10 @@ void app_main(void) {
     //       nvs_entry_find or nvs_entry_next function return NULL, indicating no other
     //       element for specified criteria was found.
 
-
-//     // Open
-//     printf("\n");
-//     printf("Opening Non-Volatile Storage (NVS) handle... ");
-//     nvs_handle_t my_handle;
-//     err = nvs_open("LCM", NVS_READWRITE, &my_handle);
-//     if (err != ESP_OK) {
-//         printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-//     } else {
-//         printf("Done\n");
-// 
-//         // Read
-//         printf("Reading restart counter from NVS ... ");
-//         int32_t restart_counter = 0; // value will default to 0, if not set yet in NVS
-//         err = nvs_get_i32(my_handle, "restart_counter", &restart_counter);
-//         switch (err) {
-//             case ESP_OK:
-//                 printf("Done\n");
-//                 printf("Restart counter = %d\n", restart_counter);
-//                 break;
-//             case ESP_ERR_NVS_NOT_FOUND:
-//                 printf("The value is not initialized yet!\n");
-//                 break;
-//             default :
-//                 printf("Error (%s) reading!\n", esp_err_to_name(err));
-//         }
-
-//         // Write
-//         printf("Updating restart counter in NVS ... ");
-//         restart_counter++;
-//         err = nvs_set_i32(my_handle, "restart_counter", restart_counter);
-//         printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-// 
-//         // Commit written value.
-//         // After setting any values, nvs_commit() must be called to ensure changes are written
-//         // to flash storage. Implementations may write to storage at other times,
-//         // but this is not guaranteed.
-//         printf("Committing updates in NVS ... ");
-//         err = nvs_commit(my_handle);
-//         printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-// 
-//         // Close
-//         nvs_close(my_handle);
-//     }
-// 
-//     printf("\n");
-// 
-    esp_ota_set_boot_partition(esp_partition_find_first(ESP_PARTITION_TYPE_ANY,ESP_PARTITION_SUBTYPE_ANY,"ota_1"));
+    nvs_stats_t nvs_stats;
+    nvs_get_stats(NULL, &nvs_stats);
+    printf("\nCount: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n\n",
+           nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);
 
     // Restart module
     for (int i = 30; i >= 0; i--) {
@@ -120,6 +85,7 @@ void app_main(void) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     printf("Restarting now.\n");
+    esp_ota_set_boot_partition(esp_partition_find_first(ESP_PARTITION_TYPE_ANY,ESP_PARTITION_SUBTYPE_ANY,"ota_1"));
     fflush(stdout);
     esp_restart();
 }
