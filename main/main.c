@@ -23,7 +23,7 @@
 
 // You must set VERSION=x.y.z of the lcm-demo code to match github version tag x.y.z via e.g. version.txt file
 
-uint8_t lcm_bootloader_count=255;
+uint8_t lcm_bootloader_count=0,rtc_read_busy=1;
 void rtc_task(void *arg) {
     rtc_retain_mem_t* rtcmem=bootloader_common_get_rtc_retain_mem(); //access to the memory struct
     if (bootloader_common_get_rtc_retain_mem_reboot_counter()) { //if zero, RTC CRC not valid
@@ -32,17 +32,18 @@ void rtc_task(void *arg) {
         lcm_bootloader_count=0; //valid count values are > 0
     }
     bootloader_common_reset_rtc_retain_mem(); //this will clear RTC    
-    rtcmem->custom[1]=1; //byte one for temp_boot signal (from app to bootloader)
+    rtcmem->custom[1]=lcm_bootloader_count%2; //byte one for temp_boot signal (from app to bootloader)
     bootloader_common_update_rtc_retain_mem(NULL,false); //this will update the CRC only
     printf("core0 count=%d\n",lcm_bootloader_count);
+    rtc_read_busy=0;
     vTaskDelete(NULL);
 }
 
 void app_main(void) {
-    xTaskCreatePinnedToCore(rtc_task,"rtc",1024,NULL,1,NULL,0);
+    xTaskCreatePinnedToCore(rtc_task,"rtc",4096,NULL,1,NULL,0); //CPU_0 PRO_CPU needed for rtc operations
     
     printf("\n\n\nLifeCycleManager-Demo ESP32-version %s\n",esp_ota_get_app_description()->version);
-    while (lcm_bootloader_count==255) vTaskDelay(1);
+    while (rtc_read_busy) vTaskDelay(1);
     printf("app_main count=%d\n",lcm_bootloader_count);
     
     // Initialize NVS
