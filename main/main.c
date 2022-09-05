@@ -32,9 +32,10 @@ void rtc_task(void *arg) {
         lcm_bootloader_count=0; //valid count values are > 0
     }
     bootloader_common_reset_rtc_retain_mem(); //this will clear RTC    
-    rtcmem->custom[1]=lcm_bootloader_count%2; //byte one for temp_boot signal (from app to bootloader)
+    rtcmem->reboot_counter=1;
+    rtcmem->custom[1]=lcm_bootloader_count>2?1:0; //byte one for temp_boot signal (from app to bootloader)
     bootloader_common_update_rtc_retain_mem(NULL,false); //this will update the CRC only
-    printf("core0 count=%d\n",lcm_bootloader_count);
+    printf("core0 count=%d temp_boot=%d\n",lcm_bootloader_count,rtcmem->custom[1]);
     rtc_read_busy=0;
     vTaskDelete(NULL);
 }
@@ -73,8 +74,12 @@ void app_main(void) {
     uint8_t number;
     char    string[64];
     size_t  size=64;
+    uint8_t blob_data[1024];
+    size_t blob_size = 1024;
     nvs_handle_t lcm_handle;
+    nvs_handle_t wifi_handle;
     err = nvs_open("LCM", NVS_READONLY, &lcm_handle);
+    err = nvs_open("nvs.net80211", NVS_READWRITE, &wifi_handle);
     // Example of listing all the key-value pairs of any type under specified partition and namespace
     nvs_iterator_t it = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY);
     while (it != NULL) {
@@ -89,6 +94,18 @@ void app_main(void) {
                 printf("  value: '%s'",string);
             } else { //number
                 nvs_get_u8(lcm_handle,info.key,&number);
+                printf("  value: %d",number);
+            }
+        }
+        if (!strcmp(info.namespace_name,"nvs.net80211")) { //wifi only uses blob for ssid and password
+            if (info.type==0x42) { //blob
+                printf("  value:");
+                blob_size=1024;
+                nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
+                for (int i=0;i<blob_size;i++) printf(" %02x",blob_data[i]);
+            }
+            if (info.type==0x01) { //uint8_t
+                nvs_get_u8(wifi_handle,info.key,&number);
                 printf("  value: %d",number);
             }
         }
