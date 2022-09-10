@@ -1,0 +1,3 @@
+[submodule "components/lcm-api"]
+	path = components/lcm-api
+	url = https://github.com/HomeACcessoryKid/lcm-api
