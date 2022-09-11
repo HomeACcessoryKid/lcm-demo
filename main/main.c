@@ -16,14 +16,9 @@
 
 #define CMD_BUF_SIZE 5000
 uint8_t count=0;
-int  timeleft=30; //30 seconds timeout
+int  timeleft=60; //60 seconds timeout if left unattended
 nvs_handle_t lcm_handle;
 nvs_handle_t wifi_handle;
-uint8_t number;
-char    string[64];
-size_t  size=64;
-uint8_t blob_data[1024];
-size_t  blob_size=1024;
 
 void usage(void) {
     printf(
@@ -41,7 +36,6 @@ void usage(void) {
         );
 //      "  led<+/-><pin#>  -- Set gpio with a LED connected, >15 to remove\n"
 //      "                      +- defines if LED activates with a 0 or a 1\n"
-//      "  compact         -- Compact the sysparam area\n"
 }
 
 size_t tty_readline(char *buffer, size_t buf_size, bool echo) {
@@ -119,6 +113,11 @@ uint8_t *parse_hexdata(char *string, size_t *result_length) {
     return buf;
 }
 
+uint8_t number;
+char    string[65];
+size_t  size=65;
+uint8_t blob_data[65];
+size_t  blob_size=65;
 void dump_params(void) {
     nvs_iterator_t it = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY); //listing all the key-value pairs
     while (it != NULL) {
@@ -128,7 +127,7 @@ void dump_params(void) {
         printf("namespace:%-15s key:%-15s type:%2d", info.namespace_name, info.key, info.type);
         if (!strcmp(info.namespace_name,"LCM")) { //LCM only uses U8 and string
             if (info.type==0x21) { //string
-                string[0]=0;size=64;
+                string[0]=0;size=65;
                 nvs_get_str(lcm_handle,info.key,string,&size);
                 printf("  value: '%s'",string);
             } else { //number
@@ -137,15 +136,17 @@ void dump_params(void) {
             }
         }
         if (!strcmp(info.namespace_name,"nvs.net80211")) { //wifi only uses blob for ssid and password
-            if (info.type==0x42) { //blob
-                printf("  value:");
-                blob_size=1024;
+            if (!strcmp(info.key,"sta.ssid")) {
+                printf("  value: ");
+                blob_size=65;
                 nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
-                for (int i=0;i<blob_size;i++) printf(" %02x",blob_data[i]);
+                printf("'%s'",blob_data+4);
             }
-            if (info.type==0x01) { //uint8_t
-                nvs_get_u8(wifi_handle,info.key,&number);
-                printf("  value: %d",number);
+            if (!strcmp(info.key,"sta.pswd")) {
+                printf("  value: ");
+                blob_size=65;
+                nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
+                printf("'%s'",blob_data);
             }
         }
         printf("\n");
@@ -178,9 +179,12 @@ void ota_task(void *arg) {
     }
 
     count=lcm_read_count();
-    printf("lcm_demo_count=%d\n",count);
+    printf("\n\n\nLifeCycleManager-Demo ESP32-version %s\n",esp_ota_get_app_description()->version);
+    printf("LCM power-cycle count=%d\n",count);
     printf(
-        "\nIn 30 seconds will reset the version to 0.0.0 and reboot to OTA\n"
+        "\nIn 1 minute will reset.\n"
+        "If powercylce count=3 reboot to OTA and\n"
+        "if powercylce count=4 also set the version to 0.0.0\n"
         "Press enter for 5 new minutes\n"
         "Enter 'help' for more information.\n\n"
     );
@@ -212,7 +216,12 @@ void ota_task(void *arg) {
         } else if ((value = strchr(cmd_buffer, '='))) {
             *value++ = 0;
             printf("Setting '%s' to '%s'...\n", cmd_buffer, value);
-            status = nvs_set_str(lcm_handle,cmd_buffer, value);
+            if (strlen(value)) {
+                status = nvs_set_str(lcm_handle,cmd_buffer, value);
+            } else {
+                status = nvs_erase_key(lcm_handle,cmd_buffer);
+            }
+            nvs_commit( lcm_handle);
         } else if ((value = strchr(cmd_buffer, ':'))) {
             *value++ = 0;
             data = parse_hexdata(value, &len);
@@ -232,17 +241,10 @@ void ota_task(void *arg) {
         } else if (!strcmp(cmd_buffer, "dump")) {
             printf("Dumping all params:\n");
             dump_params();
-//         } else if (!strcmp(cmd_buffer, "compact")) {
-//             printf("Compacting...\n");
-//             status = sysparam_compact();
         } else if (!strcmp(cmd_buffer, "reformat")) {
             printf("Re-initializing region...\n");
-//             status = sysparam_create_area(base_addr, num_sectors, true);
-//             if (status == SYSPARAM_OK) {
-//                 // We need to re-init after wiping out the region we've been
-//                 // using.
-//                 status = sysparam_init(base_addr, 0);
-//             }
+            nvs_flash_erase();
+            nvs_flash_init();
         } else if (!strcmp(cmd_buffer, "echo_on")) {
             echo = true;
             printf("Echo on\n");
@@ -270,14 +272,15 @@ void timeout_task(void *arg) {
         if (timeleft==10) printf("In 10 seconds will reset the version to 0.0.0 and reboot to OTA\nPress <enter> for 5 new minutes\n==> ");
         if (timeleft <10) printf("In %d seconds\n==> ",timeleft);
         if (timeleft--==0) { //timed out
+            if (count==4) nvs_set_str(lcm_handle,"ota_version", "0.0.0");  //only needed for the demo to be efficient
+            nvs_commit( lcm_handle);
             dump_params();
-            //TODO: set version to 0.0.0
-//             sysparam_set_string("ota_version", "0.0.0");  //only needed for the demo to be efficient
             // in ota-boot the user gets to set the wifi and the repository details and it then installs the ota-main binary
             // the below line is the ONLY thing needed for a repo to support ota after having started with ota-boot
             printf("Restarting now.\n");
             fflush(stdout);
-            if (count>2) lcm_temp_boot(); else esp_restart();
+            if (count>2) lcm_temp_boot(); // for count==3 and count==4 we trigger ota_main
+            else esp_restart(); //regular reboot
 
             vTaskDelete(NULL); //should never get here
         }
@@ -286,7 +289,7 @@ void timeout_task(void *arg) {
 }
 
 void app_main(void) {
-    printf("\n\n\nLifeCycleManager-Demo ESP32-version %s\n",esp_ota_get_app_description()->version);
+    printf("app_main-start\n");
     
     esp_err_t err = nvs_flash_init(); // Initialize NVS
     if (err==ESP_ERR_NVS_NO_FREE_PAGES || err==ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -310,5 +313,5 @@ void app_main(void) {
     xTaskCreate(ota_task,"ota",4096,NULL,1,NULL);
     xTaskCreate(timeout_task,"t-o",2048,NULL,1,NULL);
 
-    printf("user-init-done\n");
+    printf("app_main-done\n");
 }
