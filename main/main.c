@@ -27,8 +27,9 @@ void usage(void) {
         "  otazero         -- Reset the ota_version to 0.0.0\n"
         "  <key>?          -- Query the value of <key>\n"
         "  <key>=<value>   -- Set <key> to text <value>\n"
-        "  <key>:<hexdata> -- Set <key> to binary value represented as hex\n"
+        "  <key>#<value>   -- Set <key> to uint8_t <value>\n"
         "  dump            -- Show all currently set keys/values\n"
+        "  stats           -- Show current statistics about NVS\n"
         "  reformat        -- Reinitialize (clear) the sysparam area\n"
         "  echo_off        -- Disable input echo\n"
         "  echo_on         -- Enable input echo\n"
@@ -36,6 +37,7 @@ void usage(void) {
         );
 //      "  led<+/-><pin#>  -- Set gpio with a LED connected, >15 to remove\n"
 //      "                      +- defines if LED activates with a 0 or a 1\n"
+//      "  <key>:<hexdata> -- Set <key> to binary blob represented as hex\n"
 }
 
 size_t tty_readline(char *buffer, size_t buf_size, bool echo) {
@@ -119,12 +121,15 @@ size_t  size=65;
 uint8_t blob_data[65];
 size_t  blob_size=65;
 void dump_params(void) {
+    printf("\n");
     nvs_iterator_t it = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY); //listing all the key-value pairs
     while (it != NULL) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
         it = nvs_entry_next(it);
-        printf("namespace:%-15s key:%-15s type:%2d", info.namespace_name, info.key, info.type);
+        if (strcmp(info.namespace_name,"nvs.net80211")) { //suppress wifi at this level
+            printf("namespace:%-15s key:%-15s type:%2d", info.namespace_name, info.key, info.type);
+        }
         if (!strcmp(info.namespace_name,"LCM")) { //LCM only uses U8 and string
             if (info.type==0x21) { //string
                 string[0]=0;size=65;
@@ -137,19 +142,19 @@ void dump_params(void) {
         }
         if (!strcmp(info.namespace_name,"nvs.net80211")) { //wifi only uses blob for ssid and password
             if (!strcmp(info.key,"sta.ssid")) {
-                printf("  value: ");
+                printf("namespace:%-15s key:%-15s type:%2d  value: ", info.namespace_name, info.key, info.type);
                 blob_size=65;
                 nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
                 printf("'%s'",blob_data+4);
             }
             if (!strcmp(info.key,"sta.pswd")) {
-                printf("  value: ");
+                printf("namespace:%-15s key:%-15s type:%2d  value: ", info.namespace_name, info.key, info.type);
                 blob_size=65;
                 nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
                 printf("'%s'",blob_data);
             }
         }
-        printf("\n");
+        if (strcmp(info.namespace_name,"nvs.net80211")) printf("\n");
     };
     // Note: no need to release iterator obtained from nvs_entry_find function when
     //       nvs_entry_find or nvs_entry_next function return NULL, indicating no other
@@ -159,7 +164,7 @@ void dump_params(void) {
 void nvs_stats() {
     nvs_stats_t nvs_stats;
     nvs_get_stats(NULL, &nvs_stats);
-    printf("NVS-Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n\n",
+    printf("NVS-Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n",
            nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);
 }
 
@@ -169,10 +174,10 @@ void ota_task(void *arg) {
     char *value;
 //     uint8_t *bin_value;
     size_t len;
-    uint8_t *data;
+//     uint8_t *data;
     bool echo = true;
 
-    vTaskDelay(500); //5 seconds to allow connecting a console after flashing
+    vTaskDelay(1000); //10 seconds to allow connecting a console after flashing and flush wifi info messages
     if (!cmd_buffer) {
         printf("ERROR: Cannot allocate command buffer!\n");
         vTaskDelete(NULL);
@@ -183,9 +188,9 @@ void ota_task(void *arg) {
     printf("LCM power-cycle count=%d\n",count);
     printf(
         "\nIn 1 minute will reset.\n"
+        "Press <enter> for 5 new minutes\n"
         "If powercylce count=3 reboot to OTA and\n"
         "if powercylce count=4 also set the version to 0.0.0\n"
-        "Press enter for 5 new minutes\n"
         "Enter 'help' for more information.\n\n"
     );
     nvs_stats();
@@ -222,16 +227,29 @@ void ota_task(void *arg) {
                 status = nvs_erase_key(lcm_handle,cmd_buffer);
             }
             nvs_commit( lcm_handle);
-        } else if ((value = strchr(cmd_buffer, ':'))) {
+        } else if ((value = strchr(cmd_buffer, '#'))) {
             *value++ = 0;
-            data = parse_hexdata(value, &len);
-            if (value) {
-                printf("Setting '%s' to binary data...\n", cmd_buffer);
-//                 status = sysparam_set_data(cmd_buffer, data, len, true);
-                free(data);
+            if (atoi(value)<256) {
+                printf("Setting '%s' to '%s'...\n", cmd_buffer, value);
+                if (strlen(value)) {
+                    status = nvs_set_u8(lcm_handle,cmd_buffer, atoi(value));
+                } else {
+                    status = nvs_erase_key(lcm_handle,cmd_buffer);
+                }
+                nvs_commit( lcm_handle);
             } else {
-                printf("Error: Unable to parse hex data\n");
+                printf("Valid uint8_t values are between 0 and 255\n");
             }
+//         } else if ((value = strchr(cmd_buffer, ':'))) {
+//             *value++ = 0;
+//             data = parse_hexdata(value, &len);
+//             if (value) {
+//                 printf("Setting '%s' to binary data...\n", cmd_buffer);
+// //                 status = sysparam_set_data(cmd_buffer, data, len, true);
+//                 free(data);
+//             } else {
+//                 printf("Error: Unable to parse hex data\n");
+//             }
 //         } else if ((value = strchr(cmd_buffer, '+'))) {
 //             *value++ = 0;
 //             ledset(atoi(value),0);
@@ -241,6 +259,8 @@ void ota_task(void *arg) {
         } else if (!strcmp(cmd_buffer, "dump")) {
             printf("Dumping all params:\n");
             dump_params();
+        } else if (!strcmp(cmd_buffer, "stats")) {
+            nvs_stats();
         } else if (!strcmp(cmd_buffer, "reformat")) {
             printf("Re-initializing region...\n");
             nvs_flash_erase();
@@ -290,14 +310,16 @@ void timeout_task(void *arg) {
 
 void app_main(void) {
     printf("app_main-start\n");
-    
+
+    //The code in this function would be the setup for any app that uses wifi which is set by LCM
+    //It is all boilerplate code that is also used in common_example code
     esp_err_t err = nvs_flash_init(); // Initialize NVS
     if (err==ESP_ERR_NVS_NO_FREE_PAGES || err==ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase()); //NVS partition truncated and must be erased
         err = nvs_flash_init(); //Retry nvs_flash_init
     } ESP_ERROR_CHECK( err );
 
-    //experimental block that gets you WIFI with the lowest amount of effort, and based on FLASH
+    //block that gets you WIFI with the lowest amount of effort, and based on FLASH
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -309,6 +331,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_FLASH));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_connect());
+    //end of boilerplate code
 
     xTaskCreate(ota_task,"ota",4096,NULL,1,NULL);
     xTaskCreate(timeout_task,"t-o",2048,NULL,1,NULL);
