@@ -145,13 +145,14 @@ void dump_params(void) {
                 printf("namespace:%-15s key:%-15s type:%2d  value: ", info.namespace_name, info.key, info.type);
                 blob_size=65;
                 nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
-                printf("'%s'",blob_data+4);
+                blob_data[blob_data[0]+4]=0; //force a closing zero (just in case, currently already zero)
+                printf("'%s'\n",blob_data+4);
             }
             if (!strcmp(info.key,"sta.pswd")) {
                 printf("namespace:%-15s key:%-15s type:%2d  value: ", info.namespace_name, info.key, info.type);
                 blob_size=65;
                 nvs_get_blob(wifi_handle,info.key,blob_data,&blob_size);
-                printf("'%s'",blob_data);
+                printf("'%s'\n",blob_data);
             }
         }
         if (strcmp(info.namespace_name,"nvs.net80211")) printf("\n");
