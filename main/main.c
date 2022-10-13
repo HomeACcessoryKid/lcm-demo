@@ -116,8 +116,8 @@ uint8_t *parse_hexdata(char *string, size_t *result_length) {
 }
 
 uint8_t number;
-char    string[65];
-size_t  size=65;
+char    string[2048];
+size_t  size;
 uint8_t blob_data[65];
 size_t  blob_size=65;
 void dump_params(void) {
@@ -132,9 +132,13 @@ void dump_params(void) {
         }
         if (!strcmp(info.namespace_name,"LCM")) { //LCM only uses U8 and string
             if (info.type==0x21) { //string
-                string[0]=0;size=65;
+                string[0]=0;size=2048;
                 nvs_get_str(lcm_handle,info.key,string,&size);
-                printf("  value: '%s'",string);
+                if (strchr(string,'\n')) {
+                    printf("  value: '\n%s' end value",string);
+                } else {
+                    printf("  value: '%s'",string);
+                }
             } else { //number
                 nvs_get_u8(lcm_handle,info.key,&number);
                 printf("  value: %d",number);
