@@ -122,11 +122,12 @@ uint8_t blob_data[65];
 size_t  blob_size=65;
 void dump_params(void) {
     printf("\n");
-    nvs_iterator_t it = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY); //listing all the key-value pairs
-    while (it != NULL) {
+    nvs_iterator_t it = NULL;
+    esp_err_t res = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY, &it); //listing all the key-value pairs
+    while(res == ESP_OK) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
-        it = nvs_entry_next(it);
+        res = nvs_entry_next(&it);
         if (strcmp(info.namespace_name,"nvs.net80211")) { //suppress wifi at this level
             printf("namespace:%-15s key:%-15s type:%2d", info.namespace_name, info.key, info.type);
         }
@@ -161,9 +162,7 @@ void dump_params(void) {
         }
         if (strcmp(info.namespace_name,"nvs.net80211")) printf("\n");
     };
-    // Note: no need to release iterator obtained from nvs_entry_find function when
-    //       nvs_entry_find or nvs_entry_next function return NULL, indicating no other
-    //       element for specified criteria was found.
+    nvs_release_iterator(it);
 }
 
 void nvs_stats() {
@@ -189,7 +188,7 @@ void ota_task(void *arg) {
     }
 
     count=lcm_read_count();
-    printf("\n\n\nLifeCycleManager-Demo ESP32-version %s\n",esp_ota_get_app_description()->version);
+    printf("\n\n\nLifeCycleManager-Demo ESP32-version %s\n",esp_app_get_description()->version);
     printf("LCM power-cycle count=%d\n",count);
     printf(
         "\nIn 1 minute will reset.\n"

@@ -1,2 +1,8 @@
+x-32[b]*
+x-s2[b]*
+x-s3[b]*
+x-c3[b]*
+x-h2[b]*
 build/
 sdkconfig.old
+*main.bin*
